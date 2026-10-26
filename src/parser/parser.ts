@@ -351,3 +351,72 @@ export function storyLine(els: { kind: ElementKind; text: string }[]): string {
   if (object) line += ` — and ${/^[aeiou]/.test(object) ? 'an' : 'a'} ${object} to remember`;
   return `${line}.`;
 }
+
+// ---- Sentence gate (typed + voice) ----
+// Elements are only plotted from finished sentences: text that ends with . ! ? …
+// or that clearly reads as a full sentence (a subject followed by a finite verb).
+// Bare fragments such as "walking downtown", "at the cafe" or "Toronto" are held back.
+
+const SUBJECT_PRONOUNS = new Set(['i', 'we', 'he', 'she', 'they', 'you', 'it', 'someone', 'everyone', 'everybody', 'somebody', 'nobody', 'people', 'there', 'this', 'that']);
+const DETERMINERS = new Set(['my', 'our', 'his', 'her', 'their', 'your', 'the', 'a', 'an', 'this', 'that', 'these', 'those', 'its']);
+const FINITE_VERBS = new Set([
+  'am', 'is', 'are', 'was', 'were', 'be', 'been', 'have', 'has', 'had', 'do', 'does', 'did', 'will', 'would', 'can', 'could',
+  'shall', 'should', 'may', 'might', 'must', "i'm", "we're", "they're", "it's", "she's", "he's", "i've", "we've", "i'd", "we'd",
+  'went', 'go', 'goes', 'saw', 'see', 'sees', 'met', 'meet', 'found', 'find', 'finds', 'felt', 'feel', 'feels', 'spent', 'spend',
+  'got', 'get', 'gets', 'took', 'take', 'takes', 'made', 'make', 'makes', 'came', 'come', 'comes', 'ate', 'eat', 'eats', 'drank',
+  'drink', 'bought', 'buy', 'left', 'leave', 'ran', 'run', 'sat', 'sit', 'stood', 'thought', 'think', 'knew', 'know', 'told',
+  'said', 'say', 'says', 'gave', 'give', 'wrote', 'write', 'read', 'heard', 'hear', 'brought', 'kept', 'began', 'woke', 'slept',
+  'love', 'loves', 'like', 'likes', 'want', 'wants', 'need', 'needs', 'walk', 'walks', 'swam', 'flew', 'drove', 'rode', 'sang',
+  'became', 'held', 'lost', 'won', 'paid', 'sent', 'built', 'caught', 'taught', 'fell', 'grew', 'hope', 'hoped', 'wish',
+]);
+// -ed words that are usually adjectives after a determiner ("my tired sister").
+const ED_ADJECTIVES = new Set(['tired', 'excited', 'scared', 'bored', 'worried', 'surprised', 'interested', 'relaxed', 'crowded', 'old-fashioned', 'red', 'bed']);
+
+const words = (s: string) => s.toLowerCase().replace(/[“”"()]/g, '').split(/[\s,;:]+/).map((w) => w.replace(/[.!?…]+$/, '').replace(/’/g, "'")).filter(Boolean);
+
+function isFiniteVerb(w: string, prev: string | undefined): boolean {
+  if (FINITE_VERBS.has(w)) return true;
+  if (/^[a-z]{3,}ed$/.test(w) && !ED_ADJECTIVES.has(w) && !(prev && DETERMINERS.has(prev))) return true;
+  return false;
+}
+
+/** True when text has a subject followed by a finite verb ("I was walking downtown"). */
+export function hasSubjectAndVerb(text: string): boolean {
+  const raw = text.trim().split(/\s+/).map((w) => w.replace(/[^\p{L}'’-]/gu, ''));
+  const ws = words(text);
+  let subjectSeen = false;
+  for (let i = 0; i < ws.length; i++) {
+    const w = ws[i];
+    if (subjectSeen && isFiniteVerb(w, ws[i - 1])) return true;
+    const capitalised = /^\p{Lu}/u.test(raw[i] ?? '') && (i > 0 || !OPENER_WORDS.has(w));
+    if (SUBJECT_PRONOUNS.has(w) || DETERMINERS.has(w) || (capitalised && !isKnownWord(w)) || w === 'family' || w === 'friends') subjectSeen = true;
+  }
+  return false;
+}
+
+const ENDS_SENTENCE = /[.!?…]["'”’)]*$/;
+
+/** A finished sentence: ends with . ! ? … or clearly has a subject and a verb. */
+export function isCompleteSentence(text: string): boolean {
+  const t = text.trim();
+  if (!t || !/\p{L}/u.test(t)) return false;
+  if (ENDS_SENTENCE.test(t)) return true;
+  return hasSubjectAndVerb(t);
+}
+
+/**
+ * Split input into finished sentences (ready to plot) and an unfinished remainder
+ * that is held back. Used for typed input and for speech after a pause.
+ */
+export function gateSentences(text: string): { complete: string[]; rest: string } {
+  const complete: string[] = [];
+  const leftovers: string[] = [];
+  for (const line of text.split(/\n+/)) {
+    const { complete: done, rest } = takeCompleteSentences(line.trim());
+    complete.push(...done);
+    if (!rest) continue;
+    if (isCompleteSentence(rest)) complete.push(asSentence(rest));
+    else leftovers.push(rest);
+  }
+  return { complete, rest: leftovers.join(' ').trim() };
+}

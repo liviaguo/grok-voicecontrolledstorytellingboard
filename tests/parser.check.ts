@@ -3,7 +3,7 @@
  * (bundled with esbuild, executed with plain node — no test framework needed).
  */
 import assert from 'node:assert/strict';
-import { parseStory, takeCompleteSentences, asSentence, storyLine } from '../src/parser/parser';
+import { parseStory, takeCompleteSentences, asSentence, storyLine, isCompleteSentence, gateSentences } from '../src/parser/parser';
 
 let failed = 0;
 const check = (name: string, fn: () => void) => {
@@ -66,6 +66,36 @@ check('Story line summarises the day', () => {
   assert.equal(line, 'A day at the beach with Maya, feeling hopeful — and an old key to remember.');
   const toronto = storyLine(parseStory('Today I spent a whole day of vacation in downtown Toronto with my family. We walked past the lake, I felt hopeful.'));
   assert.equal(toronto, 'A day in Toronto with my family, feeling hopeful.');
+});
+
+check('Sentence gate rejects bare fragments', () => {
+  for (const f of ['walking downtown', 'at the cafe', 'Toronto', 'Walking downtown', 'my sister Maya', 'Maya walking through downtown Toronto', 'the old key', '']) {
+    assert.equal(isCompleteSentence(f), false, `accepted fragment "${f}"`);
+    assert.deepEqual(gateSentences(f).complete, [], `plotted fragment "${f}"`);
+  }
+  assert.deepEqual(gateSentences('walking downtown'), { complete: [], rest: 'walking downtown' });
+});
+
+check('Sentence gate accepts finished / full sentences', () => {
+  const full = [
+    'I was walking downtown.',
+    'I was walking downtown',
+    'This morning my sister Maya and I walked to the beach. I felt nervous but hopeful, and we found an old key.',
+    'Today I spent a whole day of vacation in downtown Toronto with my family. We walked past the lake, I felt hopeful and a little nervous in the crowd, and we found an old key in a market stall.',
+    'Maya walking through downtown Toronto in autumn.',
+    'we found an old key',
+    'Maya bought flowers',
+    'my family went to the lake',
+  ];
+  for (const t of full) {
+    assert.equal(isCompleteSentence(t), true, `rejected "${t}"`);
+    assert.equal(gateSentences(t).rest, '', `held back part of "${t}"`);
+  }
+  assert.deepEqual(gateSentences('I was walking downtown'), { complete: ['I was walking downtown.'], rest: '' });
+});
+
+check('Sentence gate plots finished sentences and holds the trailing fragment', () => {
+  assert.deepEqual(gateSentences('We walked to the lake. at the cafe'), { complete: ['We walked to the lake.'], rest: 'at the cafe' });
 });
 
 if (failed) {

@@ -1,6 +1,6 @@
 import './style.css';
 import { Review } from './review/review';
-import { asSentence, parseStory, storyLine, takeCompleteSentences } from './parser/parser';
+import { asSentence, gateSentences, isCompleteSentence, parseStory, storyLine, takeCompleteSentences } from './parser/parser';
 import { emptyDay, hasContent, loadStore, saveStore } from './storage/storage';
 import {
   KIND_META, KINDS, isoDate, isValidIsoDate, parseIsoDate, shiftDate, uid,
@@ -60,6 +60,7 @@ app.innerHTML = /* html */ `
       <form id="type-form" class="type-form">
         <label for="type-input" class="eyebrow">Write</label>
         <textarea id="type-input" rows="4" placeholder="This morning my sister Maya and I walked to the beach. I felt nervous but hopeful, and we found an old key."></textarea>
+        <p id="type-hint" class="type-hint" role="status" aria-live="polite" hidden></p>
         <div class="type-form__row">
           <span class="muted small">⌘/Ctrl + Enter</span>
           <button class="btn btn--primary" type="submit">Add to diary</button>
@@ -92,6 +93,7 @@ const transcriptEl = $('#transcript');
 const fallbackEl = $('#fallback');
 const typeForm = $<HTMLFormElement>('#type-form');
 const typeInput = $<HTMLTextAreaElement>('#type-input');
+const typeHint = $('#type-hint');
 const titleInput = $<HTMLInputElement>('#day-title');
 const dateInput = $<HTMLInputElement>('#date-input');
 const legendEl = $('#legend');
@@ -120,7 +122,7 @@ function update(fn: (d: DiaryDay) => DiaryDay) {
 
 function goTo(date: string) {
   if (!isValidIsoDate(date) || date === currentDate) return;
-  flushSpeech(); // finish the sentence on the day it was spoken
+  flushSpeech(true); // finish the sentence on the day it was spoken
   currentDate = date;
   history.replaceState(null, '', `#${date}`);
   transcriptEl.textContent = 'Live transcript appears here.';
@@ -230,18 +232,41 @@ function addStoryText(text: string) {
   });
 }
 
-// ---- Sentence gate for speech ----
-// Speech arrives in fragments. Nothing is added to the page until a sentence is
-// finished: either it ends with . ! ? or the speaker pauses (end of utterance).
+// ---- Sentence gate ----
+// Nothing is added to the page until a sentence is finished: it ends with . ! ?
+// or clearly reads as a full sentence (subject + verb). Fragments such as
+// "walking downtown" are held back with a gentle hint instead of being plotted.
+const INCOMPLETE_HINT = 'Finish the sentence with a period, or write a full sentence';
 const SENTENCE_PAUSE_MS = 1600;
 let pendingSpeech = '';
 let pauseTimer: number | undefined;
 
-function flushSpeech() {
+function showTypeHint(text: string | null) {
+  typeHint.hidden = !text;
+  typeHint.textContent = text ?? '';
+}
+
+/**
+ * Speaker paused (or stopped). Commit the held phrase only if it is a complete
+ * sentence. Otherwise keep holding it so the next words can finish it; on a
+ * final flush (mic off / day change) move it to the Write box to finish by hand.
+ */
+function flushSpeech(final = false) {
   window.clearTimeout(pauseTimer);
   const rest = pendingSpeech.trim();
-  pendingSpeech = '';
-  if (rest) addStoryText(asSentence(rest));
+  if (!rest) return;
+  if (isCompleteSentence(rest)) {
+    pendingSpeech = '';
+    addStoryText(asSentence(rest));
+    return;
+  }
+  if (final) {
+    pendingSpeech = '';
+    typeInput.value = [typeInput.value.trim(), rest].filter(Boolean).join(' ');
+    showTypeHint(`“${rest}” wasn’t added — ${INCOMPLETE_HINT.charAt(0).toLowerCase()}${INCOMPLETE_HINT.slice(1)}.`);
+  } else if (voice.isActive) {
+    setMicStatus(`Holding “${rest}” — keep going and finish the sentence.`, 'busy');
+  }
 }
 
 function onSpeechPhrase(phrase: string) {
@@ -250,7 +275,7 @@ function onSpeechPhrase(phrase: string) {
   pendingSpeech = rest;
   if (complete.length) addStoryText(complete.join(' '));
   window.clearTimeout(pauseTimer);
-  if (pendingSpeech) pauseTimer = window.setTimeout(flushSpeech, SENTENCE_PAUSE_MS);
+  if (pendingSpeech) pauseTimer = window.setTimeout(() => flushSpeech(), SENTENCE_PAUSE_MS);
 }
 
 // ---- Voice (engine lives in src/voice/voice.ts) ----
@@ -267,7 +292,7 @@ const voice = new VoiceRecorder({
     // Still talking: hold the unfinished sentence a little longer.
     if (!isFinal && pendingSpeech) {
       window.clearTimeout(pauseTimer);
-      pauseTimer = window.setTimeout(flushSpeech, SENTENCE_PAUSE_MS);
+      pauseTimer = window.setTimeout(() => flushSpeech(), SENTENCE_PAUSE_MS);
     }
   },
   onFinalPhrase(phrase) {
@@ -278,7 +303,7 @@ const voice = new VoiceRecorder({
     micBtn.setAttribute('aria-pressed', String(listening));
     micLabel.textContent = listening ? 'Stop' : 'Start speaking';
     setMicStatus(listening ? 'Mic on — listening. Each sentence is added when you finish it.' : 'Mic off', listening ? 'live' : undefined);
-    if (!listening && !voice.isActive) flushSpeech();
+    if (!listening && !voice.isActive) flushSpeech(true);
     if (listening) fallbackEl.hidden = true;
   },
   onError(message, kind) {
@@ -321,9 +346,15 @@ if (!isVoiceSupported() || !voice.supported) {
 // ---- Typed input ----
 typeForm.addEventListener('submit', (e) => {
   e.preventDefault();
-  addStoryText(typeInput.value);
-  typeInput.value = '';
+  const { complete, rest } = gateSentences(typeInput.value);
+  if (complete.length) addStoryText(complete.join(' '));
+  // Keep any unfinished part in the box so it can be completed; nothing is plotted from it.
+  typeInput.value = rest;
+  showTypeHint(rest ? INCOMPLETE_HINT : null);
   typeInput.focus();
+});
+typeInput.addEventListener('input', () => {
+  if (!typeHint.hidden && (!typeInput.value.trim() || gateSentences(typeInput.value).rest === '')) showTypeHint(null);
 });
 typeInput.addEventListener('keydown', (e) => {
   if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) typeForm.requestSubmit();
