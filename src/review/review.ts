@@ -1,5 +1,6 @@
 import { KIND_META, type ElementKind, type StoryElement } from '../types';
 import { icon, KIND_ICON, visualFor } from '../visuals/visuals';
+import { imageStatus, loadSceneImage, retrySceneImage } from '../visuals/sceneImage';
 
 export interface ReviewCallbacks {
   onDelete: (id: string) => void;
@@ -48,15 +49,10 @@ export class Review {
 
     const scenes = elements.filter((e) => e.kind === 'scene');
     if (scenes.length) {
-      const sec = this.section('Moments', 'In the order you told it', scenes.length, 'scene');
+      const sec = this.section('Moments', 'Each moment, drawn as a picture', scenes.length, 'scene');
       sec.classList.add('review__section--scene');
       const ol = el('ol', 'moments');
-      scenes.forEach((s, i) => {
-        const li = this.item(s, 'moment');
-        const n = el('span', 'moment__n', String(i + 1).padStart(2, '0'));
-        li.prepend(n);
-        ol.appendChild(li);
-      });
+      scenes.forEach((s, i) => ol.appendChild(this.moment(s, i)));
       sec.appendChild(ol);
       this.root.appendChild(sec);
     }
@@ -81,6 +77,79 @@ export class Review {
     if (focusedId) this.root.querySelector<HTMLElement>(`[data-id="${CSS.escape(focusedId)}"]`)?.focus();
   }
 
+  /** A Moment as a picture card: generated illustration + short caption. */
+  private moment(e: StoryElement, i: number): HTMLElement {
+    const li = el('li', 'moment');
+    li.dataset.id = e.id;
+    li.dataset.kind = e.kind;
+    li.tabIndex = 0;
+    if (!this.seen.has(e.id)) li.classList.add('is-new');
+    li.setAttribute('aria-label', `Moment ${i + 1}: ${e.text}`);
+
+    const pic = el('div', 'moment__pic');
+    const fallback = el('span', 'moment__fallback');
+    fallback.setAttribute('aria-hidden', 'true');
+    const v = visualFor(e);
+    fallback.innerHTML = v.svg; // bundled, trusted diary SVG
+    pic.appendChild(fallback);
+
+    const url = e.image;
+    const showImage = () => {
+      const img = document.createElement('img');
+      img.className = 'moment__img';
+      img.alt = `Illustration: ${e.text}`;
+      img.decoding = 'async';
+      img.src = url!;
+      pic.appendChild(img);
+      pic.dataset.state = 'loaded';
+    };
+    const showFailed = () => {
+      pic.dataset.state = 'failed';
+      const retry = el('button', 'moment__retry', 'Retry picture') as HTMLButtonElement;
+      retry.type = 'button';
+      retry.addEventListener('click', (ev) => {
+        ev.stopPropagation();
+        retry.remove();
+        pic.dataset.state = 'loading';
+        retrySceneImage(url!).then((ok) => li.isConnected && (ok ? showImage() : showFailed()));
+      });
+      pic.appendChild(retry);
+    };
+    if (!url) {
+      pic.dataset.state = 'failed';
+    } else if (imageStatus(url) === 'loaded') {
+      showImage();
+    } else {
+      pic.dataset.state = 'loading';
+      const label = el('span', 'moment__loading', 'Drawing…');
+      pic.appendChild(label);
+      loadSceneImage(url).then((ok) => {
+        if (!li.isConnected) return;
+        label.remove();
+        ok ? showImage() : showFailed();
+      });
+    }
+
+    const cap = el('div', 'moment__cap');
+    cap.append(el('span', 'moment__n', String(i + 1).padStart(2, '0')), el('span', 'moment__label', e.text));
+
+    const del = el('button', 'moment__delete') as HTMLButtonElement;
+    del.type = 'button';
+    del.title = 'Remove';
+    del.setAttribute('aria-label', `Remove moment “${e.text}”`);
+    del.innerHTML = icon('x');
+    del.addEventListener('click', () => this.cb.onDelete(e.id));
+    li.addEventListener('keydown', (ev) => {
+      if ((ev.key === 'Delete' || ev.key === 'Backspace') && ev.target === li) {
+        ev.preventDefault();
+        this.cb.onDelete(e.id);
+      }
+    });
+
+    li.append(pic, cap, del);
+    return li;
+  }
+
   private empty(): HTMLElement {
     const box = el('div', 'review__empty');
     box.append(
@@ -101,7 +170,7 @@ export class Review {
     return sec;
   }
 
-  private item(e: StoryElement, cls: 'tile' | 'moment'): HTMLElement {
+  private item(e: StoryElement, cls: 'tile'): HTMLElement {
     const li = el('li', cls);
     li.dataset.id = e.id;
     li.dataset.kind = e.kind;

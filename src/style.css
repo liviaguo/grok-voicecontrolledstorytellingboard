@@ -164,21 +164,50 @@ svg { display: block; }
 .review__none { font-size: 13px; color: var(--muted); padding: 10px 0; border-top: 1px dashed var(--line); }
 .review__grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 28px 32px; }
 
-.moments { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
-.moment {
-  position: relative; display: grid; grid-template-columns: 28px 40px 1fr 28px; align-items: center; gap: 12px;
-  padding: 10px 4px; border-top: 1px solid var(--line); border-radius: 6px;
+.moments {
+  list-style: none; margin: 0; padding: 0;
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 14px;
 }
-.moment:last-child { border-bottom: 1px solid var(--line); }
-.moment__n { font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
-.moment__icon, .tile__icon {
+.moment {
+  position: relative; display: flex; flex-direction: column; min-width: 0; overflow: hidden;
+  border: 1px solid var(--line); border-radius: 12px; background: var(--surface);
+}
+.moment__pic {
+  position: relative; aspect-ratio: 16 / 10; overflow: hidden; display: grid; place-items: center;
+  background: var(--k-bg, var(--tint)); color: var(--k-ink, var(--ink));
+}
+/* Image is requested at 640x448 and shown at 16:10 anchored to the top, so the bottom strip is cropped. */
+.moment__img {
+  position: absolute; inset: 0; width: 100%; height: calc(100% * 448 / 400); object-fit: cover; object-position: top;
+  animation: fadein 0.35s ease both;
+}
+@keyframes fadein { from { opacity: 0; } }
+.moment__fallback { width: 44px; height: 44px; opacity: 0.55; }
+.moment__fallback svg { width: 100%; height: 100%; }
+.moment__pic[data-state='loading']::after {
+  content: ''; position: absolute; inset: 0;
+  background: linear-gradient(100deg, transparent 20%, rgba(255,255,255,0.55) 50%, transparent 80%);
+  background-size: 200% 100%; animation: shimmer 1.4s linear infinite;
+}
+@keyframes shimmer { from { background-position: 150% 0; } to { background-position: -50% 0; } }
+.moment__loading { position: absolute; bottom: 8px; left: 10px; font-size: 11px; color: var(--muted); }
+.moment__retry {
+  position: absolute; bottom: 8px; left: 50%; transform: translateX(-50%);
+  font-size: 11px; padding: 3px 8px; border-radius: 999px; border: 1px solid var(--line-strong);
+  background: var(--surface); cursor: pointer;
+}
+.moment__cap { display: flex; gap: 8px; align-items: baseline; padding: 10px 12px 12px; min-width: 0; }
+.moment__n { font-size: 11px; color: var(--muted); font-variant-numeric: tabular-nums; flex: none; }
+.moment__label {
+  font-size: 13px; line-height: 1.4; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+}
+.moment__delete { position: absolute; top: 8px; right: 8px; background: rgba(255,255,255,0.9) !important; }
+.tile__icon {
   width: 40px; height: 40px; border-radius: 11px; display: grid; place-items: center;
   background: var(--k-bg, var(--tint)); color: var(--k-ink, var(--ink));
   box-shadow: inset 0 0 0 1px var(--k-line, transparent);
 }
-.moment__icon svg, .tile__icon svg { width: 24px; height: 24px; }
-.moment__text { display: flex; flex-direction: column; min-width: 0; }
-.moment__label { font-size: 14px; line-height: 1.45; }
+.tile__icon svg { width: 24px; height: 24px; }
 
 .tiles { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px; }
 .tile {

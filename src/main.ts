@@ -1,5 +1,6 @@
 import './style.css';
 import { Review } from './review/review';
+import { sceneImageUrl, type SceneContext } from './visuals/sceneImage';
 import { asSentence, gateSentences, isCompleteSentence, parseStory, storyLine, takeCompleteSentences } from './parser/parser';
 import { emptyDay, hasContent, loadStore, saveStore } from './storage/storage';
 import {
@@ -184,6 +185,16 @@ function render() {
   $('#day-heading').textContent = fmt(currentDate, { month: 'long', day: 'numeric', year: 'numeric' });
   if (document.activeElement !== titleInput) titleInput.value = d.title;
 
+  // Older pages (before visual telling) get their Moment pictures on first visit.
+  if (d.elements.some((e) => e.kind === 'scene' && !e.image)) {
+    const ctx: SceneContext = {
+      places: d.elements.filter((e) => e.kind === 'place').map((e) => e.text),
+      feelings: d.elements.filter((e) => e.kind === 'feeling').map((e) => e.text),
+    };
+    for (const e of d.elements) if (e.kind === 'scene' && !e.image) e.image = sceneImageUrl(e.text, ctx, `${currentDate}:${e.text}`);
+    saveStore(store);
+  }
+
   review.render(currentDate, d.elements, storyLine(d.elements));
 
   legendEl.innerHTML = '';
@@ -227,10 +238,15 @@ function addStoryText(text: string) {
   const parsed = parseStory(trimmed, knownNames);
   update((d) => {
     const elements = [...d.elements];
+    const ctx: SceneContext = {
+      places: parsed.filter((p) => p.kind === 'place').map((p) => p.text),
+      feelings: parsed.filter((p) => p.kind === 'feeling').map((p) => p.text),
+    };
     for (const p of parsed) {
       const dup = elements.some((e) => e.kind === p.kind && e.text.toLowerCase() === p.text.toLowerCase());
       if (dup) continue;
       const el: StoryElement = { id: uid(), kind: p.kind, text: p.text, note: p.note, asset: p.asset, x: 0, y: 0, createdAt: Date.now() };
+      if (p.kind === 'scene') el.image = sceneImageUrl(p.text, ctx, `${currentDate}:${p.text}`);
       elements.push(el);
     }
     return { ...d, elements, entries: [...d.entries, { id: uid(), text: trimmed, createdAt: Date.now() }] };

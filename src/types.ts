@@ -8,6 +8,8 @@ export interface StoryElement {
   note?: string;
   /** Canonical keyword used to pick a visual (photo or icon), e.g. "beach". */
   asset?: string;
+  /** Scenes only: generated illustration URL (cached with the day in localStorage). */
+  image?: string;
   /** Position on the board, in px relative to the board's top-left corner. */
   x: number;
   y: number;
