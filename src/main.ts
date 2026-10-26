@@ -175,11 +175,25 @@ const voice = new VoiceRecorder({
     micBtn.setAttribute('aria-pressed', String(listening));
     micLabel.textContent = listening ? 'Stop listening' : 'Start listening';
     micStatus.textContent = listening ? 'Listening — tap again to stop' : 'Tap the mic and start talking';
+    delete micStatus.dataset.tone;
+    if (listening) fallbackEl.hidden = true;
   },
-  onError(message) {
+  onError(message, kind) {
     micStatus.textContent = message;
+    micStatus.dataset.tone = 'error';
+    if (kind === 'fatal') showTypedFirst('Voice isn’t available right now — type your story below and it will build the board the same way. You can tap the mic again after fixing access.');
+  },
+  onStatus(message) {
+    micStatus.textContent = message;
+    delete micStatus.dataset.tone;
   },
 });
+
+function showTypedFirst(message: string) {
+  fallbackEl.hidden = false;
+  fallbackEl.textContent = message;
+  typeInput.focus();
+}
 
 if (!isVoiceSupported() || !voice.supported) {
   micBtn.disabled = true;
@@ -215,7 +229,7 @@ $('#tidy').addEventListener('click', () => {
 
 $('#new-story').addEventListener('click', () => {
   if (state.elements.length && !confirm('Start a new story? This clears the current board.')) return;
-  if (voice.isListening) voice.stop();
+  if (voice.isActive) voice.stop();
   clearStory();
   state = emptyStory();
   saveStory(state);

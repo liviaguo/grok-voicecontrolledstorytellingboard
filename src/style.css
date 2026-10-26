@@ -120,6 +120,7 @@ h1, h2 { font-family: 'Fraunces', Georgia, serif; margin: 0; }
 @keyframes ripple { from { transform: scale(1); opacity: 1; } to { transform: scale(1.6); opacity: 0; } }
 
 .mic-status { margin: 0; color: var(--ink-soft); font-size: 0.92rem; text-align: center; min-height: 1.3em; }
+.mic-status[data-tone='error'] { color: var(--terracotta-dark); }
 
 .transcript {
   min-height: 84px; padding: 14px 16px; border-radius: 14px; background: var(--paper);
