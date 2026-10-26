@@ -1,5 +1,5 @@
 import { KIND_META, type ElementKind, type StoryElement } from '../types';
-import { icon, visualFor } from '../visuals/visuals';
+import { icon, KIND_ICON, visualFor } from '../visuals/visuals';
 
 export interface ReviewCallbacks {
   onDelete: (id: string) => void;
@@ -48,7 +48,8 @@ export class Review {
 
     const scenes = elements.filter((e) => e.kind === 'scene');
     if (scenes.length) {
-      const sec = this.section('Moments', 'In the order you told it', scenes.length);
+      const sec = this.section('Moments', 'In the order you told it', scenes.length, 'scene');
+      sec.classList.add('review__section--scene');
       const ol = el('ol', 'moments');
       scenes.forEach((s, i) => {
         const li = this.item(s, 'moment');
@@ -63,7 +64,7 @@ export class Review {
     const grid = el('div', 'review__grid');
     for (const { kind, title, hint } of SECTIONS) {
       const items = elements.filter((e) => e.kind === kind);
-      const sec = this.section(title, hint, items.length);
+      const sec = this.section(title, hint, items.length, kind);
       sec.classList.add(`review__section--${kind}`);
       if (items.length) {
         const ul = el('ul', 'tiles');
@@ -89,10 +90,13 @@ export class Review {
     return box;
   }
 
-  private section(title: string, hint: string, count: number): HTMLElement {
+  private section(title: string, hint: string, count: number, kind: ElementKind): HTMLElement {
     const sec = el('section', 'review__section');
-    const h = el('h3', 'review__title', title);
-    h.append(el('span', 'count', String(count)));
+    const h = el('h3', 'review__title');
+    const ic = el('span', 'review__title-icon');
+    ic.setAttribute('aria-hidden', 'true');
+    ic.innerHTML = icon(KIND_ICON[kind]); // bundled, trusted SVG
+    h.append(ic, el('span', '', title), el('span', 'count', String(count)));
     sec.append(h, el('p', 'review__hint', hint));
     return sec;
   }
@@ -110,11 +114,14 @@ export class Review {
     const badge = el('span', `${cls}__icon`);
     badge.setAttribute('aria-hidden', 'true');
     if (v.type === 'icon') {
-      badge.innerHTML = v.svg; // bundled, trusted Lucide SVG
+      badge.innerHTML = v.svg; // bundled, trusted diary SVG
       if (v.tone) badge.dataset.tone = v.tone;
     } else {
       badge.classList.add('is-monogram');
-      badge.textContent = v.initials;
+      badge.append(el('span', 'monogram__letters', v.initials));
+      const mini = el('span', 'monogram__badge');
+      mini.innerHTML = v.svg; // bundled, trusted SVG silhouette
+      badge.append(mini);
     }
 
     const text = el('span', `${cls}__text`);

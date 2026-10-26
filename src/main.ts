@@ -6,7 +6,7 @@ import {
   KIND_META, KINDS, isoDate, isValidIsoDate, parseIsoDate, shiftDate, uid,
   type DiaryDay, type StoryElement,
 } from './types';
-import { icon, visualFor } from './visuals/visuals';
+import { icon, KIND_ICON, visualFor } from './visuals/visuals';
 import { VoiceRecorder, isVoiceSupported } from './voice/voice';
 
 const app = document.querySelector<HTMLDivElement>('#app')!;
@@ -160,6 +160,7 @@ function renderHistory() {
       const v = visualFor(e);
       const t = document.createElement('span');
       t.className = 'history__thumb';
+      t.dataset.kind = e.kind;
       if (v.type === 'icon') t.innerHTML = v.svg;
       else t.textContent = v.initials;
       thumbs.appendChild(t);
@@ -190,7 +191,11 @@ function render() {
     const count = d.elements.filter((e) => e.kind === kind).length;
     const li = document.createElement('li');
     li.className = `legend__item legend__item--${kind}`;
-    li.textContent = KIND_META[kind].plural;
+    const ic = document.createElement('span');
+    ic.className = 'legend__icon';
+    ic.setAttribute('aria-hidden', 'true');
+    ic.innerHTML = icon(KIND_ICON[kind]);
+    li.append(ic, KIND_META[kind].plural);
     const n = document.createElement('span');
     n.className = 'count';
     n.textContent = String(count);
