@@ -55,6 +55,8 @@ Browsers without `SpeechRecognition` (e.g. Firefox) get typed-first guidance. A 
 
 ### Images
 
+- **Moment pictures (visual telling)** — each Moment is drawn by [Pollinations](https://pollinations.ai) (free, no API key): `https://image.pollinations.ai/prompt/<style + scene + places/mood>?width=640&height=448&seed=<hash>`. The URL is deterministic and saved on the scene in localStorage, so revisiting a day reuses the browser-cached picture. Loads are queued (2 at a time) with 2 retries; on failure the Moment shows its icon and a *Retry picture* button. Needs network; first draw takes ~5–10 s.
+
 Visuals are bundled locally so the page renders instantly, with no network at runtime:
 
 - **Icons (shown)** — [Lucide](https://lucide.dev) (ISC): every person, place, object, feeling and moment is a simple icon; named people get a monogram.
