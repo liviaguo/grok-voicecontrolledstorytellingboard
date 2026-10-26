@@ -1,12 +1,12 @@
 import './style.css';
-import { Board } from './board/board';
-import { parseStory } from './parser/parser';
+import { Review } from './review/review';
+import { asSentence, parseStory, storyLine, takeCompleteSentences } from './parser/parser';
 import { emptyDay, hasContent, loadStore, saveStore } from './storage/storage';
 import {
   KIND_META, KINDS, isoDate, isValidIsoDate, parseIsoDate, shiftDate, uid,
   type DiaryDay, type StoryElement,
 } from './types';
-import { icon, photoFor, preloadPhotos } from './visuals/visuals';
+import { icon, visualFor } from './visuals/visuals';
 import { VoiceRecorder, isVoiceSupported } from './voice/voice';
 
 const app = document.querySelector<HTMLDivElement>('#app')!;
@@ -27,7 +27,6 @@ app.innerHTML = /* html */ `
       <button class="btn btn--ghost" id="today" type="button">Today</button>
     </nav>
     <div class="topbar__actions">
-      <button class="btn btn--ghost" id="tidy" type="button">Re-layout</button>
       <button class="btn btn--ghost btn--danger" id="clear-day" type="button">Clear day</button>
     </div>
   </header>
@@ -63,7 +62,7 @@ app.innerHTML = /* html */ `
         <textarea id="type-input" rows="4" placeholder="This morning my sister Maya and I walked to the beach. I felt nervous but hopeful, and we found an old key."></textarea>
         <div class="type-form__row">
           <span class="muted small">⌘/Ctrl + Enter</span>
-          <button class="btn btn--primary" type="submit">Add to board</button>
+          <button class="btn btn--primary" type="submit">Add to diary</button>
         </div>
       </form>
 
@@ -75,15 +74,10 @@ app.innerHTML = /* html */ `
 
     <section class="board-panel" aria-labelledby="board-title">
       <div class="board-head">
-        <h2 id="board-title" class="eyebrow">Board</h2>
+        <h2 id="board-title" class="eyebrow">Review</h2>
         <ul id="legend" class="legend"></ul>
       </div>
-      <div id="board" class="board">
-        <div id="board-empty" class="board__empty">
-          <p class="board__empty-title">Nothing on this day yet.</p>
-          <p class="muted">Speak or write a few sentences. People, places, feelings, objects and scenes are plotted here as image cards.</p>
-        </div>
-      </div>
+      <div id="review" class="review" aria-live="polite"></div>
     </section>
   </div>
 `;
@@ -112,10 +106,7 @@ let currentDate = isValidIsoDate(location.hash.slice(1)) ? location.hash.slice(1
 
 const day = (): DiaryDay => (store.diaries[currentDate] ??= emptyDay(currentDate));
 
-const board = new Board($('#board'), $('#board-empty'), {
-  onMove(id, x, y) {
-    update((d) => ({ ...d, elements: d.elements.map((e) => (e.id === id ? { ...e, x, y } : e)) }));
-  },
+const review = new Review($('#review'), {
   onDelete(id) {
     update((d) => ({ ...d, elements: d.elements.filter((e) => e.id !== id) }));
   },
@@ -129,9 +120,9 @@ function update(fn: (d: DiaryDay) => DiaryDay) {
 
 function goTo(date: string) {
   if (!isValidIsoDate(date) || date === currentDate) return;
+  flushSpeech(); // finish the sentence on the day it was spoken
   currentDate = date;
   history.replaceState(null, '', `#${date}`);
-  board.reset();
   transcriptEl.textContent = 'Live transcript appears here.';
   transcriptEl.dataset.empty = 'true';
   render();
@@ -163,12 +154,15 @@ function renderHistory() {
 
     const thumbs = document.createElement('span');
     thumbs.className = 'history__thumbs';
-    for (const src of [...new Set((d?.elements ?? []).map((e) => photoFor(e.asset)).filter(Boolean))].slice(0, 4)) {
-      const img = document.createElement('img');
-      img.src = src!;
-      img.alt = '';
-      thumbs.appendChild(img);
+    for (const e of (d?.elements ?? []).filter((x) => x.kind !== 'scene').slice(0, 5)) {
+      const v = visualFor(e);
+      const t = document.createElement('span');
+      t.className = 'history__thumb';
+      if (v.type === 'icon') t.innerHTML = v.svg;
+      else t.textContent = v.initials;
+      thumbs.appendChild(t);
     }
+    thumbs.setAttribute('aria-hidden', 'true');
     btn.append(when, title);
     if (thumbs.childElementCount) btn.appendChild(thumbs);
     li.appendChild(btn);
@@ -187,7 +181,7 @@ function render() {
   $('#day-heading').textContent = fmt(currentDate, { month: 'long', day: 'numeric', year: 'numeric' });
   if (document.activeElement !== titleInput) titleInput.value = d.title;
 
-  board.render(d.elements);
+  review.render(currentDate, d.elements, storyLine(d.elements));
 
   legendEl.innerHTML = '';
   for (const kind of KINDS) {
@@ -218,22 +212,45 @@ function render() {
   renderHistory();
 }
 
-/** Parse text and plot the resulting elements on the board right away. */
+/** Parse finished sentences and add what they mention to the day's review page. */
 function addStoryText(text: string) {
   const trimmed = text.trim();
   if (!trimmed) return;
-  const parsed = parseStory(trimmed);
+  const knownNames = day().elements.filter((e) => e.kind === 'character').map((e) => e.text);
+  const parsed = parseStory(trimmed, knownNames);
   update((d) => {
     const elements = [...d.elements];
     for (const p of parsed) {
       const dup = elements.some((e) => e.kind === p.kind && e.text.toLowerCase() === p.text.toLowerCase());
       if (dup) continue;
-      const { x, y } = board.placeFor(p.kind, elements);
-      const el: StoryElement = { id: uid(), kind: p.kind, text: p.text, note: p.note, asset: p.asset, x, y, createdAt: Date.now() };
+      const el: StoryElement = { id: uid(), kind: p.kind, text: p.text, note: p.note, asset: p.asset, x: 0, y: 0, createdAt: Date.now() };
       elements.push(el);
     }
     return { ...d, elements, entries: [...d.entries, { id: uid(), text: trimmed, createdAt: Date.now() }] };
   });
+}
+
+// ---- Sentence gate for speech ----
+// Speech arrives in fragments. Nothing is added to the page until a sentence is
+// finished: either it ends with . ! ? or the speaker pauses (end of utterance).
+const SENTENCE_PAUSE_MS = 1600;
+let pendingSpeech = '';
+let pauseTimer: number | undefined;
+
+function flushSpeech() {
+  window.clearTimeout(pauseTimer);
+  const rest = pendingSpeech.trim();
+  pendingSpeech = '';
+  if (rest) addStoryText(asSentence(rest));
+}
+
+function onSpeechPhrase(phrase: string) {
+  pendingSpeech = `${pendingSpeech} ${phrase}`.trim();
+  const { complete, rest } = takeCompleteSentences(pendingSpeech);
+  pendingSpeech = rest;
+  if (complete.length) addStoryText(complete.join(' '));
+  window.clearTimeout(pauseTimer);
+  if (pendingSpeech) pauseTimer = window.setTimeout(flushSpeech, SENTENCE_PAUSE_MS);
 }
 
 // ---- Voice (engine lives in src/voice/voice.ts) ----
@@ -244,23 +261,29 @@ function setMicStatus(text: string, tone?: 'live' | 'error' | 'busy') {
 }
 
 const voice = new VoiceRecorder({
-  onTranscript(text) {
+  onTranscript(text, isFinal) {
     transcriptEl.dataset.empty = String(!text);
     transcriptEl.textContent = text || 'Listening…';
+    // Still talking: hold the unfinished sentence a little longer.
+    if (!isFinal && pendingSpeech) {
+      window.clearTimeout(pauseTimer);
+      pauseTimer = window.setTimeout(flushSpeech, SENTENCE_PAUSE_MS);
+    }
   },
   onFinalPhrase(phrase) {
-    addStoryText(phrase);
+    onSpeechPhrase(phrase);
   },
   onStateChange(listening) {
     micBtn.classList.toggle('is-listening', listening);
     micBtn.setAttribute('aria-pressed', String(listening));
     micLabel.textContent = listening ? 'Stop' : 'Start speaking';
-    setMicStatus(listening ? 'Mic on — listening. Each sentence is plotted as you finish it.' : 'Mic off', listening ? 'live' : undefined);
+    setMicStatus(listening ? 'Mic on — listening. Each sentence is added when you finish it.' : 'Mic off', listening ? 'live' : undefined);
+    if (!listening && !voice.isActive) flushSpeech();
     if (listening) fallbackEl.hidden = true;
   },
   onError(message, kind) {
     setMicStatus(message, 'error');
-    if (kind === 'fatal') showTypedFirst('Voice isn’t available right now — write below and the board builds the same way. Tap the mic again after fixing access.');
+    if (kind === 'fatal') showTypedFirst('Voice isn’t available right now — write below and the page builds the same way. Tap the mic again after fixing access.');
   },
   onStatus(message) {
     setMicStatus(message, 'busy');
@@ -316,22 +339,16 @@ window.addEventListener('hashchange', () => goTo(location.hash.slice(1)));
 // ---- Header actions ----
 titleInput.addEventListener('change', () => update((d) => ({ ...d, title: titleInput.value.trim() })));
 
-$('#tidy').addEventListener('click', () => update((d) => ({ ...d, elements: board.tidy(d.elements) })));
 
 $('#clear-day').addEventListener('click', () => {
   if (!hasContent(day())) return;
   if (!confirm(`Clear everything on ${fmt(currentDate, { month: 'long', day: 'numeric' })}?`)) return;
   if (voice.isActive) voice.stop();
-  board.reset();
+  pendingSpeech = '';
+  window.clearTimeout(pauseTimer);
   update(() => emptyDay(currentDate));
 });
 
 history.replaceState(null, '', `#${currentDate}`);
 render();
-preloadPhotos();
 
-let resizeTimer: number | undefined;
-window.addEventListener('resize', () => {
-  window.clearTimeout(resizeTimer);
-  resizeTimer = window.setTimeout(render, 120);
-});

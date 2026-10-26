@@ -19,6 +19,7 @@ const RELATIONS = [
   'grandpa', 'grandfather', 'friend', 'best friend', 'partner', 'husband', 'wife', 'boyfriend',
   'girlfriend', 'boss', 'teacher', 'neighbour', 'neighbor', 'aunt', 'uncle', 'cousin', 'son',
   'daughter', 'baby', 'dog', 'cat', 'puppy', 'kitten', 'coworker', 'roommate', 'kid', 'kids',
+  'family', 'parents', 'friends', 'grandparents', 'children', 'team', 'classmate', 'colleague',
 ];
 
 const CHARACTER_NOUNS = [
@@ -46,7 +47,7 @@ const CITIES = [
 const ASSET_ALIASES: Record<string, string> = {
   house: 'home', 'living room': 'home', attic: 'home', woods: 'forest', 'café': 'cafe', 'coffee shop': 'cafe',
   mountains: 'mountain', sea: 'ocean', harbour: 'harbor', station: 'train', shore: 'beach', waterfront: 'harbor',
-  backyard: 'garden', meadow: 'park', trail: 'forest', downtown: 'city', neighbourhood: 'street', neighborhood: 'street',
+  backyard: 'garden', meadow: 'park', trail: 'forest', neighbourhood: 'street', neighborhood: 'street',
   campus: 'school', bar: 'restaurant', pub: 'restaurant', supermarket: 'market', mall: 'market',
   bicycle: 'bike', photo: 'camera', photograph: 'camera', present: 'gift', flower: 'flowers', journal: 'notebook',
   puppy: 'dog', kitten: 'cat', books: 'book', photos: 'camera', backpack: 'bag', computer: 'laptop', 'ice cream': 'ice-cream', plants: 'plant',
@@ -90,6 +91,17 @@ const NAME_STOPWORDS = new Set([
   'November', 'December', 'Also', 'Just', 'Maybe', 'Some', 'With', 'For', 'From', 'Of', 'Is', 'Was',
 ]);
 
+/** Common sentence openers that are capitalised only because they start a sentence. */
+const OPENER_WORDS = new Set([
+  'went', 'walked', 'had', 'got', 'spent', 'felt', 'feeling', 'woke', 'saw', 'met', 'found', 'made', 'took', 'came',
+  'left', 'ate', 'drank', 'bought', 'tried', 'started', 'finished', 'played', 'watched', 'visited', 'called', 'talked',
+  'lots', 'lot', 'everyone', 'everything', 'nothing', 'someone', 'somehow', 'what', 'why', 'how', 'who', 'where',
+  'if', 'because', 'since', 'while', 'until', 'though', 'although', 'as', 'by', 'not', 'all', 'most', 'many', 'few',
+  'every', 'each', 'both', 'such', 'these', 'those', 'us', 'him', 'them', 'let', 'lets', 'let’s', 'let\'s', 'thanks',
+  'thank', 'good', 'great', 'nice', 'really', 'very', 'still', 'even', 'now', 'back', 'up', 'down', 'out', 'over',
+  'walking', 'drinking', 'eating', 'sitting', 'reading', 'writing', 'working', 'having', 'going', 'getting', 'looking',
+]);
+
 const EXPLICIT_PREFIX: Record<string, ElementKind> = {
   character: 'character', who: 'character', person: 'character',
   place: 'place', where: 'place', location: 'place',
@@ -99,8 +111,9 @@ const EXPLICIT_PREFIX: Record<string, ElementKind> = {
 };
 
 const escape = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+/** Whole-word matcher that also works for accented words like "café" (\b is ASCII-only). */
 const wordRegex = (words: string[]) =>
-  new RegExp(`\\b(${[...words].sort((a, b) => b.length - a.length).map(escape).join('|')})\\b`, 'gi');
+  new RegExp(`(?<![\\p{L}\\p{N}])(${[...words].sort((a, b) => b.length - a.length).map(escape).join('|')})(?![\\p{L}\\p{N}])`, 'giu');
 
 const RELATION_RE = new RegExp(
   `\\b(?:[Mm]y|[Oo]ur)\\s+(${[...RELATIONS].sort((a, b) => b.length - a.length).map(escape).join('|')})\\b`,
@@ -172,7 +185,7 @@ function placeIn(sentence: string): string | undefined {
  * objects, and at least one scene per chunk (so every entry shows up on the
  * board's timeline). Order: scene first, then the things in it.
  */
-export function parseStory(text: string): ParsedElement[] {
+export function parseStory(text: string, extraNames: Iterable<string> = []): ParsedElement[] {
   const out: ParsedElement[] = [];
   const seen = new Set<string>();
   const push = (kind: ElementKind, raw: string, extra: Partial<ParsedElement> = {}) => {
@@ -186,6 +199,14 @@ export function parseStory(text: string): ParsedElement[] {
 
   const sentences = splitSentences(text);
   let sceneAdded = false;
+  // Names seen mid-sentence anywhere in the text are names at sentence start too.
+  const knownNames = new Set<string>(extraNames);
+  for (const s of sentences) {
+    s.split(/\s+/).slice(1).forEach((w) => {
+      const c = w.replace(/[^A-Za-z]/g, '');
+      if (/^[A-Z][a-z]+$/.test(c) && !NAME_STOPWORDS.has(c) && !CITY_WORDS.has(c) && !isKnownWord(c)) knownNames.add(c);
+    });
+  }
   const firstPlace = placeIn(text);
 
   for (const sentence of sentences) {
@@ -209,6 +230,7 @@ export function parseStory(text: string): ParsedElement[] {
     const named = new Set<string>();
     const coveredRelations = new Set<string>();
     for (const m of sentence.matchAll(RELATION_NAME_RE)) {
+      knownNames.add(m[2]);
       push('character', m[2], { note: `my ${m[1].toLowerCase()}` });
       named.add(m[2]);
       coveredRelations.add(m[1].toLowerCase());
@@ -218,19 +240,32 @@ export function parseStory(text: string): ParsedElement[] {
       if (coveredRelations.has(rel)) continue;
       push('character', titleCase(`my ${rel}`), { asset: assetKey(rel) });
     }
-    for (const m of sentence.matchAll(NAMED_RE)) push('character', m[1]);
+    for (const m of sentence.matchAll(NAMED_RE)) {
+      knownNames.add(m[1]);
+      named.add(m[1]);
+      push('character', m[1]);
+    }
     for (const m of sentence.matchAll(CHARACTER_NOUN_RE)) push('character', titleCase(cleanPhrase(m[1])));
 
     // Cities are places.
-    for (const m of sentence.matchAll(CITY_RE)) push('place', m[1], { asset: 'city' });
+    for (const m of sentence.matchAll(CITY_RE)) push('place', m[1], { asset: 'city', note: 'city' });
 
     // Proper names: capitalised words that are not the first word of the sentence.
     const words = sentence.split(/\s+/);
     words.forEach((w, i) => {
-      const clean = w.replace(/[^A-Za-z'’-]/g, '');
-      if (i === 0 || !/^[A-Z][a-z]+$/.test(clean) || NAME_STOPWORDS.has(clean)) return;
+      const clean = w.replace(/[^A-Za-z'’-]/g, '').replace(/['’]s$/, '');
+      if (!/^[A-Z][a-z]+$/.test(clean) || NAME_STOPWORDS.has(clean)) return;
       if (named.has(clean) || CITY_WORDS.has(clean)) return;
-      if (PLACES.includes(clean.toLowerCase())) return;
+      if (isKnownWord(clean)) return;
+      // The first word is capitalised anyway: only treat it as a name when it is
+      // already known as one, or reads like a subject ("Maya and I…", "Maya walking…", "Maya's…").
+      if (i === 0 && !knownNames.has(clean)) {
+        const next = (words[1] ?? '').toLowerCase().replace(/[^a-z'’]/g, '');
+        const possessive = /['’]s$/.test(w.replace(/[^A-Za-z'’]/g, ''));
+        const subjectLike = possessive || /^(and|&|was|is|were|said|says|told|asked|smiled|laughed|cried|came|went|walked|ran|left|met|took|gave|showed|found|made|loved|likes|liked|wanted|had|has)$/.test(next) || /(ing|ed)$/.test(next);
+        if (!subjectLike) return;
+      }
+      knownNames.add(clean);
       push('character', clean);
     });
 
@@ -258,4 +293,61 @@ export function parseStory(text: string): ParsedElement[] {
   }
 
   return out;
+}
+
+const LEXICON = new Set(
+  [...RELATIONS, ...CHARACTER_NOUNS, ...PLACES, ...FEELINGS, ...OBJECTS, ...OPENER_WORDS]
+    .filter((w) => !w.includes(' '))
+    .map((w) => w.toLowerCase()),
+);
+function isKnownWord(word: string): boolean {
+  return LEXICON.has(word.toLowerCase());
+}
+
+/**
+ * Sentence gate for live speech: split a running buffer into finished sentences
+ * (ending in . ! ? or …) and the unfinished remainder, which is held back until
+ * the speaker completes it. Nothing is plotted from a half-said phrase.
+ */
+export function takeCompleteSentences(buffer: string): { complete: string[]; rest: string } {
+  const complete: string[] = [];
+  const re = /[^.!?…]*[.!?…]+["'”’)]*(?=\s|$)/g;
+  let last = 0;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(buffer))) {
+    const s = m[0].trim();
+    if (s) complete.push(s);
+    last = re.lastIndex;
+    if (m[0].length === 0) re.lastIndex++;
+  }
+  return { complete, rest: buffer.slice(last).trim() };
+}
+
+/** Make sure a spoken utterance reads as a sentence ("we found a key" → "We found a key."). */
+export function asSentence(text: string): string {
+  const t = sentenceCase(text.replace(/\s+/g, ' ').trim());
+  return !t || /[.!?…]["'”’)]*$/.test(t) ? t : `${t}.`;
+}
+
+/**
+ * One calm line that sums up the day so far — the "where is this story going"
+ * read for the review page. Built only from finished sentences.
+ */
+export function storyLine(els: { kind: ElementKind; text: string }[]): string {
+  const of = (k: ElementKind) => els.filter((e) => e.kind === k).map((e) => e.text);
+  const list = (xs: string[]) => (xs.length <= 1 ? xs.join('') : `${xs.slice(0, -1).join(', ')} and ${xs[xs.length - 1]}`);
+  const people = of('character').slice(0, 3).map((p) => p.replace(/^My\s/, 'my ').replace(/^(my \w+)$/i, (m) => m.toLowerCase()));
+  const allPlaces = of('place');
+  const cities = allPlaces.filter((p) => !PLACES.includes(p.toLowerCase())).slice(0, 2);
+  const spots = allPlaces.filter((p) => PLACES.includes(p.toLowerCase())).slice(0, cities.length ? 0 : 2).map((p) => `the ${p.toLowerCase()}`);
+  const feelings = of('feeling').slice(0, 2).map((f) => f.toLowerCase());
+  const object = of('object')[0]?.toLowerCase();
+  if (!people.length && !allPlaces.length && !feelings.length && !object) return '';
+  let line = 'A day';
+  if (spots.length) line += ` at ${list(spots)}`;
+  if (cities.length) line += ` in ${list(cities)}`;
+  if (people.length) line += ` with ${list(people)}`;
+  if (feelings.length) line += `, feeling ${list(feelings)}`;
+  if (object) line += ` — and ${/^[aeiou]/.test(object) ? 'an' : 'a'} ${object} to remember`;
+  return `${line}.`;
 }
