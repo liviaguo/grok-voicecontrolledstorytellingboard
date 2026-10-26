@@ -1,20 +1,19 @@
-import { KIND_META, KINDS, type ElementKind, type StoryElement } from '../types';
+import { KIND_META, type ElementKind, type StoryElement } from '../types';
+import { visualFor } from '../visuals/visuals';
 
 export interface BoardCallbacks {
   onMove: (id: string, x: number, y: number) => void;
   onDelete: (id: string) => void;
 }
 
-const MIN_CARD_W = 140;
-const MAX_CARD_W = 200;
-const CARD_H = 64;
-const SCENE_W = 250;
-const SCENE_H = 120;
-/** Characters, places, feelings and objects get columns; scenes run along the bottom like a timeline. */
-const COLUMN_KINDS = KINDS.filter((k) => k !== 'scene');
+/** Grid cell used for auto-placement. Scenes span two cells. */
+const CELL_W = 176;
+const CELL_H = 196;
+const GAP = 12;
 const PAD = 16;
+const spanFor = (kind: ElementKind) => (kind === 'scene' ? 2 : 1);
 
-/** Renders story elements as draggable cards inside a board container. */
+/** Renders diary elements as draggable image cards inside the board. */
 export class Board {
   private cards = new Map<string, HTMLElement>();
 
@@ -24,14 +23,17 @@ export class Board {
     private readonly cb: BoardCallbacks,
   ) {}
 
-  /** Card width adapts so the five kind-columns fit the board. */
-  private get cardWidth(): number {
-    const colWidth = (this.root.clientWidth - PAD) / COLUMN_KINDS.length;
-    return Math.round(Math.min(MAX_CARD_W, Math.max(MIN_CARD_W, colWidth - 14)));
+  private get columns(): number {
+    return Math.max(2, Math.floor((Math.max(this.root.clientWidth, 2 * CELL_W + PAD) - PAD * 2 + GAP) / CELL_W));
+  }
+
+  /** Remove every card (used when switching to another day). */
+  reset(): void {
+    for (const el of this.cards.values()) el.remove();
+    this.cards.clear();
   }
 
   render(elements: StoryElement[]): void {
-    this.root.style.setProperty('--card-w', `${this.cardWidth}px`);
     const ids = new Set(elements.map((e) => e.id));
     for (const [id, el] of this.cards) {
       if (!ids.has(id)) {
@@ -39,52 +41,53 @@ export class Board {
         this.cards.delete(id);
       }
     }
-    for (const element of elements) {
+    // If saved positions don't fit this board (e.g. opened on a phone), re-flow for display only.
+    const fits = elements.every((e) => e.x + spanFor(e.kind) * CELL_W - GAP <= this.root.clientWidth + 4);
+    const shown = fits ? elements : this.tidy(elements);
+    let bottom = 0;
+    shown.forEach((element, i) => {
       let card = this.cards.get(element.id);
       if (!card) {
         card = this.createCard(element);
         this.cards.set(element.id, card);
         this.root.appendChild(card);
-        requestAnimationFrame(() => card!.classList.add('is-in'));
+        card.style.setProperty('--delay', `${Math.min(i, 8) * 25}ms`);
+        const c = card;
+        requestAnimationFrame(() => c.classList.add('is-in'));
       }
-      // Keep cards visible if the board is narrower than when they were placed.
-      const maxX = Math.max(4, this.root.clientWidth - card.offsetWidth - 4);
-      const maxY = Math.max(4, this.root.clientHeight - card.offsetHeight - 4);
-      card.style.transform = `translate(${clamp(element.x, 4, maxX)}px, ${clamp(element.y, 4, maxY)}px)`;
-    }
+      const width = spanFor(element.kind) * CELL_W - GAP;
+      const maxX = Math.max(4, this.root.clientWidth - width - 4);
+      card.style.transform = `translate(${clamp(element.x, 4, maxX)}px, ${Math.max(4, element.y)}px)`;
+      bottom = Math.max(bottom, element.y + CELL_H);
+    });
+    this.root.style.minHeight = `${Math.max(bottom + PAD, 0)}px`;
     this.emptyEl.hidden = elements.length > 0;
   }
 
-  /** Suggest a free-ish spot for a new element, grouping by kind into columns. */
+  /** First free grid slot (reading order) that fits an element of this kind. */
   placeFor(kind: ElementKind, existing: StoryElement[]): { x: number; y: number } {
-    const sameKind = existing.filter((e) => e.kind === kind).length;
-    const width = Math.max(this.root.clientWidth, SCENE_W + PAD * 2);
-    const height = Math.max(this.root.clientHeight, 400);
-
-    if (kind === 'scene') {
-      const perRow = Math.max(1, Math.floor((width - PAD) / (SCENE_W + 14)));
-      const col = sameKind % perRow;
-      const row = Math.floor(sameKind / perRow);
-      const x = PAD + col * (SCENE_W + 14);
-      const y = height - PAD - SCENE_H - row * (SCENE_H + 14);
-      return { x, y: Math.max(PAD, y) };
+    const cols = this.columns;
+    const span = Math.min(spanFor(kind), cols);
+    const taken = new Set<string>();
+    for (const e of existing) {
+      const c0 = Math.round((e.x - PAD) / CELL_W);
+      const r0 = Math.round((e.y - PAD) / CELL_H);
+      for (let k = 0; k < spanFor(e.kind); k++) taken.add(`${r0}:${c0 + k}`);
     }
-
-    const cardW = this.cardWidth;
-    const colWidth = Math.max(cardW + 8, (width - PAD) / COLUMN_KINDS.length);
-    const col = COLUMN_KINDS.indexOf(kind);
-    const x = Math.min(PAD + col * colWidth, width - cardW - PAD) + jitter(4);
-    const y = PAD + sameKind * (CARD_H + 22) + jitter(4);
-    return { x: Math.max(PAD, x), y: Math.max(PAD, y) };
+    for (let r = 0; r < 500; r++) {
+      for (let c = 0; c + span <= cols; c++) {
+        let free = true;
+        for (let k = 0; k < span; k++) if (taken.has(`${r}:${c + k}`)) free = false;
+        if (free) return { x: PAD + c * CELL_W, y: PAD + r * CELL_H };
+      }
+    }
+    return { x: PAD, y: PAD };
   }
 
-  /** Re-lay out everything into tidy columns by kind. */
+  /** Re-flow everything into the grid in the current order. */
   tidy(elements: StoryElement[]): StoryElement[] {
     const placed: StoryElement[] = [];
-    for (const el of elements) {
-      const { x, y } = this.placeFor(el.kind, placed);
-      placed.push({ ...el, x: Math.round(x), y: Math.round(y) });
-    }
+    for (const el of elements) placed.push({ ...el, ...this.placeFor(el.kind, placed) });
     return placed;
   }
 
@@ -92,14 +95,32 @@ export class Board {
     const meta = KIND_META[element.kind];
     const card = document.createElement('article');
     card.className = `card card--${element.kind}`;
+    card.style.width = `${spanFor(element.kind) * CELL_W - GAP}px`;
     card.dataset.id = element.id;
     card.tabIndex = 0;
     card.setAttribute('aria-label', `${meta.label}: ${element.text}. Drag to move, Delete to remove.`);
 
-    const icon = document.createElement('span');
-    icon.className = 'card__icon';
-    icon.textContent = meta.icon;
-    icon.setAttribute('aria-hidden', 'true');
+    const media = document.createElement('div');
+    media.className = 'card__media';
+    const visual = visualFor(element);
+    if (visual.type === 'photo') {
+      const img = document.createElement('img');
+      img.src = visual.src;
+      img.alt = '';
+      img.draggable = false;
+      img.decoding = 'async';
+      media.appendChild(img);
+    } else if (visual.type === 'icon') {
+      media.classList.add('card__media--icon');
+      if (visual.tone) media.dataset.tone = visual.tone;
+      media.innerHTML = visual.svg; // bundled, trusted Lucide SVG
+    } else {
+      media.classList.add('card__media--monogram');
+      const m = document.createElement('span');
+      m.className = 'monogram';
+      m.textContent = visual.initials;
+      media.appendChild(m);
+    }
 
     const body = document.createElement('div');
     body.className = 'card__body';
@@ -110,6 +131,12 @@ export class Board {
     text.className = 'card__text';
     text.textContent = element.text;
     body.append(kind, text);
+    if (element.note) {
+      const note = document.createElement('span');
+      note.className = 'card__note';
+      note.textContent = element.note;
+      body.appendChild(note);
+    }
 
     const del = document.createElement('button');
     del.className = 'card__delete';
@@ -127,14 +154,14 @@ export class Board {
       }
     });
 
-    card.append(icon, body, del);
+    card.append(media, body, del);
     this.enableDrag(card, element.id);
     return card;
   }
 
   private remove(card: HTMLElement, id: string) {
     card.classList.add('is-out');
-    setTimeout(() => this.cb.onDelete(id), 160);
+    setTimeout(() => this.cb.onDelete(id), 140);
   }
 
   private enableDrag(card: HTMLElement, id: string) {
@@ -165,9 +192,8 @@ export class Board {
     card.addEventListener('pointermove', (e) => {
       if (!dragging) return;
       const maxX = this.root.clientWidth - card.offsetWidth - 4;
-      const maxY = this.root.clientHeight - card.offsetHeight - 4;
       const x = clamp(originX + e.clientX - startX, 4, Math.max(4, maxX));
-      const y = clamp(originY + e.clientY - startY, 4, Math.max(4, maxY));
+      const y = Math.max(4, originY + e.clientY - startY);
       card.style.transform = `translate(${x}px, ${y}px)`;
     });
 
@@ -186,8 +212,4 @@ export class Board {
 
 function clamp(v: number, min: number, max: number) {
   return Math.min(max, Math.max(min, v));
-}
-
-function jitter(n: number) {
-  return Math.round((Math.random() - 0.5) * n * 2);
 }

@@ -1,6 +1,8 @@
-# Storyboard — a voice-controlled storytelling board
+# Visual Diary
 
-A visual diary that listens to you. Tap the mic, talk about your day (or make up a tale), and Storyboard picks out the **characters, places, feelings, objects and scenes** in what you said and pins them to a board as cards. Drag them around to arrange your story, remove what you don't need, and pick up where you left off next time.
+A date-first visual diary. Speak or write about your day and Visual Diary plots it instantly as image cards — the **people, places, feelings, objects and scenes** you mention — on a clean board. Every day gets its own page, and you can go back to any past day.
+
+**Live:** https://liviaguo.github.io/grok-voicecontrolledstorytellingboard/
 
 No account, no backend, no API keys. Everything runs and stays in your browser.
 
@@ -19,56 +21,68 @@ Then open the URL Vite prints (usually http://localhost:5173).
 | `npm run dev` | Start the dev server with hot reload |
 | `npm run build` | Type-check with `tsc` and build to `dist/` |
 | `npm run preview` | Serve the production build locally |
+| `npm run deploy` | Build and publish `dist/` to GitHub Pages (`gh-pages` branch) |
 
 ### Browser support
 
-Voice input uses the browser's [Web Speech API](https://developer.mozilla.org/en-US/docs/Web/API/SpeechRecognition) (`SpeechRecognition` / `webkitSpeechRecognition`). It works in Chrome, Edge and Safari; it needs microphone permission and, in Chrome, a network connection. Firefox doesn't support it yet. When voice isn't available, the app says so and you can type your story instead; typed text builds the board the same way.
+Voice input uses the browser's [Web Speech API](https://developer.mozilla.org/en-US/docs/Web/API/SpeechRecognition) (`SpeechRecognition` / `webkitSpeechRecognition`). It works in Chrome, Edge and Safari; it needs microphone permission and, in Chrome, a network connection. Firefox doesn't support it yet. When voice isn't available, the app says so and you can write instead; written text builds the board the same way.
 
 ### Testing voice
 
-Voice needs a secure page: `http://localhost` or `https://` (a plain `http://` LAN IP won't get mic access). Tapping the mic first asks for microphone permission, then starts listening; it keeps listening through short silences and Chrome's periodic cut-offs until you tap it again.
+Voice needs a secure page: `http://localhost` or `https://` (a plain `http://` LAN IP won't get mic access). Tapping **Start speaking** first asks for microphone permission, then starts listening; it keeps listening through short silences and Chrome's periodic cut-offs until you tap it again.
 
-- **On your own machine (Chrome, recommended):** `npm run dev`, open http://localhost:5173, tap the mic.
+- **On your own machine (Chrome, recommended):** `npm run dev`, open http://localhost:5173, tap **Start speaking**.
   - *Allow* → speak a sentence; cards appear. Stay silent ~10s → it should keep listening (auto-restart). Tap the mic → it stops and stays stopped.
-  - *Deny* (or block via the 🔒 icon → Site settings → Microphone) → a red message explains how to re-allow, and the typed box gets focus. Re-allow, tap the mic to retry.
+  - *Deny* (or block via the 🔒 icon → Site settings → Microphone) → a red message explains how to re-allow, and the typed box gets focus. Re-allow, tap **Start speaking** to retry.
 - **On the Grok Bot box desktop:** there's usually no real microphone, so expect the "No microphone was found" / blocked path. Use it to check the error + typed-fallback flow, not recognition quality.
-- **Typed fallback:** always available — type in "Or write it down" and press *Add to board* (or Ctrl/⌘+Enter).
+- **Typed fallback:** always available — type in the **Write** box and press *Add to board* (or Ctrl/⌘+Enter).
 
 Browsers without `SpeechRecognition` (e.g. Firefox) get typed-first guidance. A MediaRecorder + server transcription fallback is a possible later addition; it isn't built.
 
 ## How it works
 
-1. **Speak or type.** Each finished phrase is saved as a diary entry.
-2. **Parse.** A small rule-based parser (`src/parser/parser.ts`) looks for cues:
-   - *Characters*: "my sister", "a dragon", "named Maya", capitalised names
-   - *Places*: park, beach, kitchen, forest…
-   - *Feelings*: happy, nervous, hopeful…
-   - *Objects*: "a key", "my guitar", "the letter"…
-   - *Scenes*: sentences with time cues like "this morning", "suddenly", "once upon a time"
-   - *Explicit*: start a sentence with `character:`, `place:`, `feeling:`, `object:` or `scene:` to add something directly.
-3. **Arrange.** Cards land in columns by type. Drag to rearrange, press × (or Delete when a card is focused) to remove, and use **Tidy board** to snap them back into columns.
-4. **Persist.** The board, title and diary entries are saved to `localStorage`, so they survive a refresh. **New story** clears everything.
+1. **Pick a day.** The app opens on today. Use ‹ › , the date picker, **Today**, or the **Past diaries** list to switch days. The URL hash (`#2026-10-26`) links straight to a day.
+2. **Speak or write.** Each finished voice phrase, or each *Add to board*, is saved as an entry for that day and plotted immediately — no extra clicks.
+3. **Parse.** A rule-based parser (`src/parser/parser.ts`) pulls out:
+   - *People*: "my sister Maya" → **Maya** (my sister), "named Alex", capitalised names
+   - *Places*: beach, park, cafe, office… and cities like Toronto
+   - *Feelings*: nervous, hopeful, grateful, tired…
+   - *Objects*: "an old key", "my camera", coffee, flowers…
+   - *Scenes*: every entry gets at least one scene card (sentences with time cues like "this morning" become their own scenes)
+   - *Explicit*: start a sentence with `person:`, `place:`, `feeling:`, `object:` or `scene:`.
+4. **Plot.** Cards fill the board in reading order. Places, objects and scenes show a matching photo; feelings show an icon on a tinted tile; people get a monogram. Drag to rearrange, × or Delete to remove, **Re-layout** to snap back to the grid.
+5. **Persist.** All days are saved in `localStorage` under `visual-diary:v2` as `{ version: 2, diaries: { "YYYY-MM-DD": { title, elements, entries, updatedAt } } }`. Boards from the earlier single-board version are migrated automatically.
+
+### Images
+
+Visuals are bundled locally so cards appear instantly, with no network at runtime:
+
+- **Photos** — 73 small CC0 photos from [StockSnap](https://stocksnap.io) (via the [Openverse](https://openverse.org) API) in `src/assets/photos/`, ~20 KB each. Sources are in `src/assets/photos/credits.json`. Refresh or extend with `python3 scripts/fetch_assets.py` (needs Pillow); edit `TOPICS` there to add keywords.
+- **Icons** — [Lucide](https://lucide.dev) (ISC) for feelings and objects without a photo.
 
 ## Project structure
 
 ```
 index.html
+vite.config.ts       # base: './' so the build works on GitHub Pages
+scripts/fetch_assets.py  # one-off CC0 photo downloader
 src/
-  main.ts            # App shell: wires voice, parser, board and storage together
-  style.css          # Warm paper-and-terracotta theme
-  types.ts           # Shared types (StoryElement, StoryState) and element metadata
+  main.ts            # App shell: date navigation, history, voice, parser, board, storage
+  style.css          # Minimal light theme
+  types.ts           # DiaryDay / DiaryStore / StoryElement types, date helpers
   voice/voice.ts     # Web Speech API wrapper (mic priming, auto-restart, errors/retry)
   voice/speech.d.ts  # Minimal Web Speech API typings
-  parser/parser.ts   # Rule-based text → story elements
-  board/board.ts     # Card rendering, drag, delete, auto-placement
-  storage/storage.ts # localStorage load/save/clear
+  parser/parser.ts   # Rule-based text → diary elements (+ asset keywords)
+  visuals/visuals.ts # Element → photo / icon / monogram
+  board/board.ts     # Image cards, drag, delete, grid auto-placement
+  storage/storage.ts # localStorage load/save, v1 migration
+  assets/photos/     # Bundled CC0 photos + credits.json
 ```
 
 ## What's next
 
-- Smarter parsing with an LLM (better entity extraction, sentiment, summaries)
-- Connect cards with lines to show how the story flows
-- Edit card text inline, recolour cards, add photos or doodles
-- Several stories, each with its own board, plus export to image or PDF
-- "Read my story back": generate a narrated version from the board
+- Smarter parsing with an LLM (better entity extraction, summaries)
+- Generated images per scene, or your own photos
+- Calendar heat-map of past days; search across diaries
+- Export a day as an image or PDF
 - Optional sync across devices
