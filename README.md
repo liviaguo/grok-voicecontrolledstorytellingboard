@@ -24,6 +24,18 @@ Then open the URL Vite prints (usually http://localhost:5173).
 
 Voice input uses the browser's [Web Speech API](https://developer.mozilla.org/en-US/docs/Web/API/SpeechRecognition) (`SpeechRecognition` / `webkitSpeechRecognition`). It works in Chrome, Edge and Safari; it needs microphone permission and, in Chrome, a network connection. Firefox doesn't support it yet. When voice isn't available, the app says so and you can type your story instead; typed text builds the board the same way.
 
+### Testing voice
+
+Voice needs a secure page: `http://localhost` or `https://` (a plain `http://` LAN IP won't get mic access). Tapping the mic first asks for microphone permission, then starts listening; it keeps listening through short silences and Chrome's periodic cut-offs until you tap it again.
+
+- **On your own machine (Chrome, recommended):** `npm run dev`, open http://localhost:5173, tap the mic.
+  - *Allow* → speak a sentence; cards appear. Stay silent ~10s → it should keep listening (auto-restart). Tap the mic → it stops and stays stopped.
+  - *Deny* (or block via the 🔒 icon → Site settings → Microphone) → a red message explains how to re-allow, and the typed box gets focus. Re-allow, tap the mic to retry.
+- **On the Grok Bot box desktop:** there's usually no real microphone, so expect the "No microphone was found" / blocked path. Use it to check the error + typed-fallback flow, not recognition quality.
+- **Typed fallback:** always available — type in "Or write it down" and press *Add to board* (or Ctrl/⌘+Enter).
+
+Browsers without `SpeechRecognition` (e.g. Firefox) get typed-first guidance. A MediaRecorder + server transcription fallback is a possible later addition; it isn't built.
+
 ## How it works
 
 1. **Speak or type.** Each finished phrase is saved as a diary entry.
@@ -45,7 +57,7 @@ src/
   main.ts            # App shell: wires voice, parser, board and storage together
   style.css          # Warm paper-and-terracotta theme
   types.ts           # Shared types (StoryElement, StoryState) and element metadata
-  voice/voice.ts     # Web Speech API wrapper (start/stop, live transcript, errors)
+  voice/voice.ts     # Web Speech API wrapper (mic priming, auto-restart, errors/retry)
   voice/speech.d.ts  # Minimal Web Speech API typings
   parser/parser.ts   # Rule-based text → story elements
   board/board.ts     # Card rendering, drag, delete, auto-placement
