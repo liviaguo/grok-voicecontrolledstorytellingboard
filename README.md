@@ -4,6 +4,14 @@ A date-first visual diary. Speak or write about your day and Visual Diary turns 
 
 **Live:** https://liviaguo.github.io/grok-voicecontrolledstorytellingboard/
 
+
+## Screenshots
+
+![Visual Diary — Toronto day (Oct 26, 2026)](docs/screenshots/visual-diary-2026-10-26-toronto.png)
+
+![Visual Diary — Home day (Oct 25, 2026)](docs/screenshots/visual-diary-2026-10-25-home.png)
+
+
 No account, no backend, no API keys. Everything runs and stays in your browser.
 
 ## Run it
