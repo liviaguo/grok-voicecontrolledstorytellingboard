@@ -14,6 +14,8 @@ Your entries stay on your device (`localStorage`). No account to sign up for.
 
 ![Visual Diary — Home day (Oct 25, 2026)](docs/screenshots/visual-diary-2026-10-25-home.png)
 
+![Visual Diary — Demo: office day (Oct 22, 2026)](docs/screenshots/visual-diary-demo-office-day.png)
+
 ## Run it
 
 Requires Node.js 18+.
