@@ -1,18 +1,18 @@
 # Visual Diary
 
-A date-first visual diary. Speak or write about your day and Visual Diary turns it into a calm **one-page review** — the **people, places, feelings, objects and moments** you mention, shown as simple icons in tidy sections under a one-line summary of the day. Every day gets its own page, and you can go back to any past day.
+**Hackathon prompt:** *Build something that can tell your story.*
+
+**Visual Diary** is my answer. Speak or write about your day and it turns that story into a calm **one-page review** — the **people, places, feelings, objects, and moments** you mentioned, as simple icons and AI-drawn scene pictures under a one-line summary of the day. Every day gets its own page; you can flip back through past days like a diary.
+
+Your entries stay on your device (`localStorage`). No account to sign up for.
 
 **Live:** https://liviaguo.github.io/grok-voicecontrolledstorytellingboard/
-
 
 ## Screenshots
 
 ![Visual Diary — Toronto day (Oct 26, 2026)](docs/screenshots/visual-diary-2026-10-26-toronto.png)
 
 ![Visual Diary — Home day (Oct 25, 2026)](docs/screenshots/visual-diary-2026-10-25-home.png)
-
-
-No account, no backend, no API keys. Everything runs and stays in your browser.
 
 ## Run it
 
