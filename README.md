@@ -55,7 +55,16 @@ Browsers without `SpeechRecognition` (e.g. Firefox) get typed-first guidance. A 
 
 ### Images
 
-- **Moment pictures (visual telling)** — each Moment is drawn by [Pollinations](https://pollinations.ai) (free, no API key): `https://image.pollinations.ai/prompt/<style + scene + places/mood>?width=640&height=448&seed=<hash>`. The URL is deterministic and saved on the scene in localStorage, so revisiting a day reuses the browser-cached picture. Loads are queued (2 at a time) with 2 retries; on failure the Moment shows its icon and a *Retry picture* button. Needs network; first draw takes ~5–10 s.
+- **Moment pictures (visual telling)** — each Moment is drawn by OpenAI `gpt-image-2.5` (quality low, 1536×1024 WebP) through the tiny proxy in [`proxy/`](proxy/server.mjs), which holds `OPENAI_API_KEY` server-side; the key is never in the frontend or this repo. A new scene stores a pending ref; once the proxy returns the picture, its data URL replaces the ref on the scene in localStorage, so revisiting a day shows it instantly. Loads are queued (2 at a time) with 2 retries; on failure the Moment shows its icon and a *Retry picture* button. First draw takes ~10–15 s.
+
+### Image proxy (demo setup)
+
+- Proxy API: `POST /api/scene-image { scene, places?, feelings? }` → `{ image: "data:image/webp;base64,…" }`; `GET /health`. CORS allows `https://liviaguo.github.io` and `localhost`. Light per-IP rate limit (12/min) and 4 concurrent generations.
+- The Pages build points at `VITE_IMAGE_API_BASE` from `.env.production` (currently `https://visual-diary-livia.tunl.cc`, a free tunl.cc tunnel to the box).
+- Start / restart proxy + tunnel (box, with `OPENAI_API_KEY` exported): `./scripts/demo-proxy.sh`. Logs: `/workspace/vd-proxy/`. It requests the same fixed subdomain, so the deployed site keeps working after a restart.
+- If the public URL ever changes, open the app once with `?api=<new URL>` (remembered in that browser), or put it in `.env.production` and `npm run deploy`.
+- Local dev: `cd proxy && OPENAI_API_KEY=… npm start`, then `npm run dev` (defaults to `http://localhost:8787`).
+- The box and tunnel must stay up during the demo; if images stop, run the script again.
 
 Visuals are bundled locally so the page renders instantly, with no network at runtime:
 

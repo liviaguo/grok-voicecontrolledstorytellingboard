@@ -1,6 +1,6 @@
 import { KIND_META, type ElementKind, type StoryElement } from '../types';
 import { icon, KIND_ICON, visualFor } from '../visuals/visuals';
-import { imageStatus, loadSceneImage, retrySceneImage } from '../visuals/sceneImage';
+import { imageStatus, loadSceneImage, retrySceneImage, sceneImageSrc } from '../visuals/sceneImage';
 
 export interface ReviewCallbacks {
   onDelete: (id: string) => void;
@@ -99,7 +99,7 @@ export class Review {
       img.className = 'moment__img';
       img.alt = `Illustration: ${e.text}`;
       img.decoding = 'async';
-      img.src = url!;
+      img.src = sceneImageSrc(url!);
       pic.appendChild(img);
       pic.dataset.state = 'loaded';
     };

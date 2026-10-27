@@ -1,6 +1,6 @@
 import './style.css';
 import { Review } from './review/review';
-import { sceneImageUrl, type SceneContext } from './visuals/sceneImage';
+import { needsSceneImage, onSceneImageResolved, sceneImageUrl, type SceneContext } from './visuals/sceneImage';
 import { asSentence, gateSentences, isCompleteSentence, parseStory, storyLine, takeCompleteSentences } from './parser/parser';
 import { emptyDay, hasContent, loadStore, saveStore } from './storage/storage';
 import {
@@ -121,6 +121,19 @@ function update(fn: (d: DiaryDay) => DiaryDay) {
   render();
 }
 
+// A freshly drawn Moment picture replaces its pending ref on the scene, so the
+// day keeps the image in localStorage and never regenerates it.
+onSceneImageResolved((ref, dataUrl) => {
+  let changed = false;
+  for (const d of Object.values(store.diaries))
+    for (const e of d.elements)
+      if (e.image === ref) {
+        e.image = dataUrl;
+        changed = true;
+      }
+  if (changed) saveStore(store);
+});
+
 function goTo(date: string) {
   if (!isValidIsoDate(date) || date === currentDate) return;
   flushSpeech(true); // finish the sentence on the day it was spoken
@@ -186,12 +199,12 @@ function render() {
   if (document.activeElement !== titleInput) titleInput.value = d.title;
 
   // Older pages (before visual telling) get their Moment pictures on first visit.
-  if (d.elements.some((e) => e.kind === 'scene' && !e.image)) {
+  if (d.elements.some((e) => e.kind === 'scene' && needsSceneImage(e.image))) {
     const ctx: SceneContext = {
       places: d.elements.filter((e) => e.kind === 'place').map((e) => e.text),
       feelings: d.elements.filter((e) => e.kind === 'feeling').map((e) => e.text),
     };
-    for (const e of d.elements) if (e.kind === 'scene' && !e.image) e.image = sceneImageUrl(e.text, ctx, `${currentDate}:${e.text}`);
+    for (const e of d.elements) if (e.kind === 'scene' && needsSceneImage(e.image)) e.image = sceneImageUrl(e.text, ctx, `${currentDate}:${e.text}`);
     saveStore(store);
   }
 

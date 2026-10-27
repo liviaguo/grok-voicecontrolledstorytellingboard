@@ -1,0 +1,8 @@
+{
+  "name": "visual-diary-image-proxy",
+  "private": true,
+  "type": "module",
+  "description": "Holds OPENAI_API_KEY server-side and turns a diary scene into a picture.",
+  "scripts": { "start": "node server.mjs" },
+  "engines": { "node": ">=18" }
+}
