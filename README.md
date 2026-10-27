@@ -2,7 +2,7 @@
 
 **Hackathon prompt:** *Build something that can tell your story.*
 
-**Visual Diary** is my answer. Speak or write about your day and it turns that story into a calm **one-page review** — the **people, places, feelings, objects, and moments** you mentioned, as simple icons and AI-drawn scene pictures under a one-line summary of the day. Every day gets its own page; you can flip back through past days like a diary.
+**Visual Diary** is my answer — built in about **1 hour**. Speak or write about your day and it turns that story into a calm **one-page review** — the **people, places, feelings, objects, and moments** you mentioned, as simple icons and AI-drawn scene pictures under a one-line summary of the day. Every day gets its own page; you can flip back through past days like a diary.
 
 Your entries stay on your device (`localStorage`). No account to sign up for.
 
